@@ -229,7 +229,7 @@ jobs:
         if: ${{ !(contains(needs.*.result, 'failure')) && !(contains(needs.*.result, 'cancelled')) }}
         run: exit 0
       - name: Failing or cancelled build
-        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: exit 1
 
   check_generated_parser:
