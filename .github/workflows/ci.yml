@@ -11,8 +11,18 @@ permissions:
   contents: read
 
 jobs:
+  pre-pull-image:
+    name: Pre-pull Docker images
+    runs-on: monkci-ubuntu-24.04-4
+    steps:
+      - name: Pull golang-builder images
+        run: |
+          docker pull quay.io/prometheus/golang-builder:1.26-base
+          docker pull quay.io/prometheus/golang-builder:1.25-base
+
   test_go:
     name: Go tests
+    needs: pre-pull-image
     runs-on: monkci-ubuntu-24.04-4
     container:
       image: quay.io/prometheus/golang-builder:1.26-base
@@ -30,6 +40,7 @@ jobs:
 
   test_go_more:
     name: More Go tests
+    needs: pre-pull-image
     runs-on: monkci-ubuntu-24.04-4
     container:
       image: quay.io/prometheus/golang-builder:1.26-base
@@ -47,6 +58,7 @@ jobs:
 
   test_go_386:
     name: Go tests for 32-bit x86
+    needs: pre-pull-image
     runs-on: monkci-ubuntu-24.04-4
     container:
       image: quay.io/prometheus/golang-builder:1.26-base
@@ -59,6 +71,7 @@ jobs:
 
   test_version_upgrade:
     name: Go tests for Prometheus upgrades and downgrades
+    needs: pre-pull-image
     runs-on: monkci-ubuntu-24.04-4
     container:
       image: quay.io/prometheus/golang-builder:1.26-base
@@ -71,6 +84,7 @@ jobs:
 
   test_go_oldest:
     name: Go tests with previous Go version
+    needs: pre-pull-image
     runs-on: monkci-ubuntu-24.04-4
     env:
       GOTOOLCHAIN: local
@@ -85,6 +99,7 @@ jobs:
 
   test_ui:
     name: UI tests
+    needs: pre-pull-image
     runs-on: monkci-ubuntu-24.04-4
     container:
       image: quay.io/prometheus/golang-builder:1.26-base
@@ -100,15 +115,16 @@ jobs:
       - run: make ui-lint
       - run: make ui-test
         env:
-          NODE_OPTIONS: "--no-experimental-vm-modules"    # ← add this
-          GENERATE_SOURCEMAP: "false"                     # ← add this
+          NODE_OPTIONS: "--no-experimental-vm-modules"
+          GENERATE_SOURCEMAP: "false"
       - uses: prometheus/promci-artifacts/save@f9a587dbc0b2c78a0c54f8ad1cde71ea29a4b76f
+        continue-on-error: true
         with:
           directory: .tarballs
 
   test_windows:
     name: Go tests on Windows
-    if: ${{ false }}           # ← skipped
+    if: ${{ false }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -124,6 +140,7 @@ jobs:
 
   test_mixins:
     name: Mixins tests
+    needs: pre-pull-image
     runs-on: monkci-ubuntu-24.04-4
     container:
       image: quay.io/prometheus/golang-builder:1.26-base
@@ -142,6 +159,7 @@ jobs:
 
   test-compliance:
     name: Compliance testing
+    needs: pre-pull-image
     runs-on: monkci-ubuntu-24.04-4
     container:
       image: quay.io/prometheus/golang-builder:1.25-base
@@ -211,11 +229,12 @@ jobs:
         if: ${{ !(contains(needs.*.result, 'failure')) && !(contains(needs.*.result, 'cancelled')) }}
         run: exit 0
       - name: Failing or cancelled build
-        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
         run: exit 1
 
   check_generated_parser:
     name: Check generated parser
+    needs: pre-pull-image
     runs-on: monkci-ubuntu-24.04-4
     container:
       image: quay.io/prometheus/golang-builder:1.26-base
