@@ -99,6 +99,9 @@ jobs:
       - run: make assets-tarball
       - run: make ui-lint
       - run: make ui-test
+        env:
+          NODE_OPTIONS: "--no-experimental-vm-modules"    # ← add this
+          GENERATE_SOURCEMAP: "false"                     # ← add this
       - uses: prometheus/promci-artifacts/save@f9a587dbc0b2c78a0c54f8ad1cde71ea29a4b76f
         with:
           directory: .tarballs
@@ -334,6 +337,7 @@ jobs:
           node-version-file: "web/ui/.nvmrc"
           registry-url: "https://registry.npmjs.org"
       - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae
+        continue-on-error: true
         with:
           path: ~/.npm
           key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
