@@ -24,7 +24,7 @@ jobs:
   test_ui:
     name: UI tests
     needs: pre-pull-image
-    runs-on: monkci-ubuntu-24.04-4
+    runs-on: monkci-ubuntu-24.04-2
 
     container:
       image: quay.io/prometheus/golang-builder:1.26-base
