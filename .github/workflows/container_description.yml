@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   PushDockerHubReadme:
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-2
     name: Push README to Docker Hub
     if: github.repository_owner == 'prometheus' || github.repository_owner == 'prometheus-community' # Don't run this workflow on forks.
     steps:
@@ -37,7 +37,7 @@ jobs:
           readme_file: ''
 
   PushQuayIoReadme:
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-2
     name: Push README to quay.io
     if: github.repository_owner == 'prometheus' || github.repository_owner == 'prometheus-community' # Don't run this workflow on forks.
     steps:
