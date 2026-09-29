@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   govulncheck:
-    runs-on: monkci-ubuntu-latest
+    runs-on: ubuntu-latest
     name: Run govulncheck
     steps:
       - id: govulncheck
