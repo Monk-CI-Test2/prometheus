@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   repo_sync:
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-2
     if: github.repository_owner == 'prometheus'
     container:
       image: quay.io/prometheus/golang-builder

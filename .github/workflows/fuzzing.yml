@@ -7,7 +7,7 @@ permissions:
 jobs:
   fuzzing:
     name: Run Go Fuzz Tests
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-2
     strategy:
       matrix:
         fuzz_test: [[FuzzParseMetricText, FuzzParseOpenMetric], [FuzzParseMetricSelector, FuzzParseExpr], [FuzzXORChunk, FuzzXOR2Chunk], [FuzzParseProtobuf]]
@@ -37,7 +37,7 @@ jobs:
     # step into a final status. Fails if a single matrix job fails, succeeds if
     # all matrix jobs succeed.
     name: Fuzzing
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-8
     needs: [fuzzing]
     if: always()
     steps:

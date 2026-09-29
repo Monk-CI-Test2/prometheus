@@ -26,7 +26,7 @@ jobs:
     if: github.event.action == 'prombench_start'
     permissions:
       statuses: write
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-2
     steps:
       - name: Update status to pending
         run: >-
@@ -63,7 +63,7 @@ jobs:
     if: github.event.action == 'prombench_stop'
     permissions:
       statuses: write
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-2
     steps:
       - name: Update status to pending
         run: >-
@@ -100,7 +100,7 @@ jobs:
     if: github.event.action == 'prombench_restart'
     permissions:
       statuses: write
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-2
     steps:
       - name: Update status to pending
         run: >-
