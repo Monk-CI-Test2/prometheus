@@ -13,7 +13,7 @@ permissions:
 jobs:
   test_go:
     name: Go tests
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-4
     container:
       # Whenever the Go version is updated here, .promu.yml
       # should also be updated.
@@ -33,7 +33,7 @@ jobs:
 
   test_go_more:
     name: More Go tests
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-4
     container:
       image: quay.io/prometheus/golang-builder:1.27-base
     steps:
@@ -52,7 +52,7 @@ jobs:
 
   test_go_386:
     name: Go tests for 32-bit x86
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-4
     container:
       image: quay.io/prometheus/golang-builder:1.27-base
     steps:
@@ -69,7 +69,7 @@ jobs:
 
   list_lts_releases:
     name: List active LTS releases
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-4
     outputs:
       versions: ${{ steps.lts.outputs.versions }}
     steps:
@@ -83,7 +83,7 @@ jobs:
   test_version_upgrade:
     name: Go tests for Prometheus upgrades and downgrades
     needs: list_lts_releases
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-4
     strategy:
       # Run every LTS release even if one fails.
       fail-fast: false
@@ -102,7 +102,7 @@ jobs:
 
   list_oldest_go_version:
     name: List the oldest supported Go version
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-4
     outputs:
       versions: ${{ steps.go.outputs.versions }}
     steps:
@@ -118,7 +118,7 @@ jobs:
   test_go_oldest:
     name: Go tests with previous Go version
     needs: list_oldest_go_version
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-4
     strategy:
       matrix:
         go_version: ${{ fromJSON(needs.list_oldest_go_version.outputs.versions) }}
@@ -143,7 +143,7 @@ jobs:
     # Empty check with a stable name for branch protection rules, since
     # test_go_oldest now runs as a matrix job.
     name: Go tests with previous Go version
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-4
     needs: [test_go_oldest]
     if: always()
     steps:
@@ -156,7 +156,7 @@ jobs:
 
   test_ui:
     name: UI tests
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-4
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     container:
@@ -194,7 +194,7 @@ jobs:
 
   test_mixins:
     name: Mixins tests
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-4
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     container:
@@ -214,7 +214,7 @@ jobs:
 
   test-compliance:
     name: Compliance testing
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-4
     container:
       # Whenever the Go version is updated here, .promu.yml
       # should also be updated.
@@ -233,7 +233,7 @@ jobs:
 
   build:
     name: Build Prometheus for common architectures
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-4
     # Reuse the web UI built and tested by test_ui instead of rebuilding it in
     # every crossbuild container.
     needs: [test_ui]
@@ -267,7 +267,7 @@ jobs:
           thread: ${{ matrix.thread }}
   build_all:
     name: Build Prometheus for all architectures
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-4
     # Reuse the web UI built and tested by test_ui instead of rebuilding it in
     # every crossbuild container.
     needs: [test_ui]
@@ -309,7 +309,7 @@ jobs:
     # See https://github.com/orgs/community/discussions/4324 for why this is
     # needed
     name: Report status of build Prometheus for all architectures
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-4
     needs: [build_all]
     # The run condition needs to include always(). Otherwise actions
     # behave unexpected:
@@ -328,7 +328,7 @@ jobs:
   check_generated_parser:
     # Checks generated parser and UI functions list. Not renaming as it is a required check.
     name: Check generated parser
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-4
     container:
       image: quay.io/prometheus/golang-builder:1.27-base
     steps:
@@ -344,7 +344,7 @@ jobs:
       - run: make check-generated-promql-functions
   golangci:
     name: golangci-lint
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-4
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -398,7 +398,7 @@ jobs:
 
   publish_main:
     name: Publish main branch artifacts
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-4
     permissions:
       packages: write
     needs: [test_ui, test_go, test_go_more, test_go_oldest_status, test_windows, golangci, codeql, build_all]
@@ -413,7 +413,7 @@ jobs:
           quay_io_password: ${{ secrets.quay_io_password }}
   publish_release:
     name: Publish release artefacts
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-4
     permissions:
       contents: write
       packages: write
@@ -433,7 +433,7 @@ jobs:
           github_token: ${{ github.token }}
   publish_ui_release:
     name: Publish UI on npm Registry
-    runs-on: ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-4
     needs: [test_ui, codeql]
     permissions:
       contents: read
