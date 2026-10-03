@@ -106,7 +106,7 @@ func (rule *RecordingRule) Eval(ctx context.Context, queryOffset time.Duration, 
 		var templateErr error
 
 		// Build the recorded label set from the configured rule labels.
-		lb.Reset(labels.EmptyLabels())
+		lb.Reset(sample.Metric)
 		lb.Set(labels.MetricName, rule.name)
 
 		rule.labels.Range(func(l labels.Label) {
