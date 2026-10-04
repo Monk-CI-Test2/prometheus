@@ -174,11 +174,10 @@ jobs:
       - run: make ui-lint
       - run: make ui-test
       - name: Save UI assets
-        run: |
-          SHARED_DIR="$(dirname "$(dirname "$GITHUB_WORKSPACE")")/shared_artifacts/${{ github.run_id }}"
-          mkdir -p "$SHARED_DIR"
-          rm -rf "$SHARED_DIR/.tarballs"
-          cp -r .tarballs "$SHARED_DIR/"
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-tarballs
+          path: .tarballs/
 
   test_windows:
     name: Go tests on Windows
@@ -256,15 +255,10 @@ jobs:
         with:
           persist-credentials: false
       - name: Restore UI assets
-        run: |
-          SHARED_DIR="$(dirname "$(dirname "$GITHUB_WORKSPACE")")/shared_artifacts/${{ github.run_id }}"
-          if [ -d "$SHARED_DIR/.tarballs" ]; then
-            rm -rf .tarballs
-            cp -r "$SHARED_DIR/.tarballs" .
-          else
-            echo "Error: $SHARED_DIR/.tarballs not found!"
-            exit 1
-          fi
+        uses: actions/download-artifact@v4
+        with:
+          name: ui-tarballs
+          path: .tarballs/
       - name: Extract pre-built UI assets
         run: |
           mkdir -p .prebuilt-ui
@@ -302,15 +296,10 @@ jobs:
         with:
           persist-credentials: false
       - name: Restore UI assets
-        run: |
-          SHARED_DIR="$(dirname "$(dirname "$GITHUB_WORKSPACE")")/shared_artifacts/${{ github.run_id }}"
-          if [ -d "$SHARED_DIR/.tarballs" ]; then
-            rm -rf .tarballs
-            cp -r "$SHARED_DIR/.tarballs" .
-          else
-            echo "Error: $SHARED_DIR/.tarballs not found!"
-            exit 1
-          fi
+        uses: actions/download-artifact@v4
+        with:
+          name: ui-tarballs
+          path: .tarballs/
       - name: Extract pre-built UI assets
         run: |
           mkdir -p .prebuilt-ui
