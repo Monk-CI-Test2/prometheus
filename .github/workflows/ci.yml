@@ -173,9 +173,12 @@ jobs:
       - run: make assets-tarball
       - run: make ui-lint
       - run: make ui-test
-      - uses: prometheus/promci-artifacts/save@9ca3252d07f230d5f923452b4df5697eba4a5bee # v0.1.1
-        with:
-          directory: .tarballs
+      - name: Save UI assets
+        run: |
+          SHARED_DIR="$(dirname "$(dirname "$GITHUB_WORKSPACE")")/shared_artifacts/${{ github.run_id }}"
+          mkdir -p "$SHARED_DIR"
+          rm -rf "$SHARED_DIR/.tarballs"
+          cp -r .tarballs "$SHARED_DIR/"
 
   test_windows:
     name: Go tests on Windows
@@ -252,7 +255,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: prometheus/promci-artifacts/restore@9ca3252d07f230d5f923452b4df5697eba4a5bee # v0.1.1
+      - name: Restore UI assets
+        run: |
+          SHARED_DIR="$(dirname "$(dirname "$GITHUB_WORKSPACE")")/shared_artifacts/${{ github.run_id }}"
+          if [ -d "$SHARED_DIR/.tarballs" ]; then
+            rm -rf .tarballs
+            cp -r "$SHARED_DIR/.tarballs" .
+          else
+            echo "Error: $SHARED_DIR/.tarballs not found!"
+            exit 1
+          fi
       - name: Extract pre-built UI assets
         run: |
           mkdir -p .prebuilt-ui
@@ -289,7 +301,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: prometheus/promci-artifacts/restore@9ca3252d07f230d5f923452b4df5697eba4a5bee # v0.1.1
+      - name: Restore UI assets
+        run: |
+          SHARED_DIR="$(dirname "$(dirname "$GITHUB_WORKSPACE")")/shared_artifacts/${{ github.run_id }}"
+          if [ -d "$SHARED_DIR/.tarballs" ]; then
+            rm -rf .tarballs
+            cp -r "$SHARED_DIR/.tarballs" .
+          else
+            echo "Error: $SHARED_DIR/.tarballs not found!"
+            exit 1
+          fi
       - name: Extract pre-built UI assets
         run: |
           mkdir -p .prebuilt-ui
