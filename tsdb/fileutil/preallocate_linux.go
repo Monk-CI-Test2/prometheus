@@ -27,7 +27,7 @@ func preallocExtend(f *os.File, sizeInBytes int64) error {
 		var errno syscall.Errno
 		// not supported; fallback
 		// fallocate EINTRs frequently in some environments; fallback
-		if errors.As(err, &errno) && (errno == syscall.ENOTSUP || errno == syscall.EINTR) {
+		if errors.As(err, &errno) && (errno == syscall.ENOTSUP || errno == syscall.EOPNOTSUPP || errno == syscall.ENOSYS || errno == syscall.EINTR) {
 			return preallocExtendTrunc(f, sizeInBytes)
 		}
 	}
@@ -40,7 +40,7 @@ func preallocFixed(f *os.File, sizeInBytes int64) error {
 	if err != nil {
 		var errno syscall.Errno
 		// treat not supported as nil error
-		if errors.As(err, &errno) && errno == syscall.ENOTSUP {
+		if errors.As(err, &errno) && (errno == syscall.ENOTSUP || errno == syscall.EOPNOTSUPP || errno == syscall.ENOSYS) {
 			return nil
 		}
 	}

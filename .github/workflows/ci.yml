@@ -173,9 +173,11 @@ jobs:
       - run: make assets-tarball
       - run: make ui-lint
       - run: make ui-test
-      - uses: prometheus/promci-artifacts/save@9ca3252d07f230d5f923452b4df5697eba4a5bee # v0.1.1
+      - name: Save UI assets
+        uses: actions/upload-artifact@v4
         with:
-          directory: .tarballs
+          name: ui-tarballs
+          path: .tarballs/
 
   test_windows:
     name: Go tests on Windows
@@ -188,9 +190,9 @@ jobs:
         with:
           go-version: 1.27.x
       - run: |
-          $TestTargets = go list ./... | Where-Object { $_ -NotMatch "(github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"}
+          TestTargets=$(go list ./... | grep -E -v "(github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)")
           go test $TestTargets -vet=off -v
-        shell: powershell
+        shell: bash
 
   test_mixins:
     name: Mixins tests
@@ -252,7 +254,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: prometheus/promci-artifacts/restore@9ca3252d07f230d5f923452b4df5697eba4a5bee # v0.1.1
+      - name: Restore UI assets
+        uses: actions/download-artifact@v4
+        with:
+          name: ui-tarballs
+          path: .tarballs/
       - name: Extract pre-built UI assets
         run: |
           mkdir -p .prebuilt-ui
@@ -289,7 +295,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: prometheus/promci-artifacts/restore@9ca3252d07f230d5f923452b4df5697eba4a5bee # v0.1.1
+      - name: Restore UI assets
+        uses: actions/download-artifact@v4
+        with:
+          name: ui-tarballs
+          path: .tarballs/
       - name: Extract pre-built UI assets
         run: |
           mkdir -p .prebuilt-ui
