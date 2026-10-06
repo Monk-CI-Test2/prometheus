@@ -859,6 +859,7 @@ type scrapeLoop struct {
 
 	// Options from config.ScrapeConfig.
 	sampleLimit                   int
+	scrapedSampleLimit            int
 	bucketLimit                   int
 	maxSchema                     int32
 	labelLimits                   *labelLimits
@@ -1206,9 +1207,10 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		metrics:      opts.sp.metrics,
 
 		// config.ScrapeConfig.
-		sampleLimit: int(opts.sp.config.SampleLimit),
-		bucketLimit: int(opts.sp.config.NativeHistogramBucketLimit),
-		maxSchema:   pickSchema(opts.sp.config.NativeHistogramMinBucketFactor),
+		sampleLimit:        int(opts.sp.config.SampleLimit),
+		scrapedSampleLimit: int(opts.sp.config.ScrapedSampleLimit),
+		bucketLimit:        int(opts.sp.config.NativeHistogramBucketLimit),
+		maxSchema:          pickSchema(opts.sp.config.NativeHistogramMinBucketFactor),
 		labelLimits: &labelLimits{
 			labelLimit:            int(opts.sp.config.LabelLimit),
 			labelNameLengthLimit:  int(opts.sp.config.LabelNameLengthLimit),
@@ -1628,13 +1630,14 @@ func (sl *scrapeLoopAppender) append(b []byte, contentType string, ts time.Time)
 		)
 	}
 	var (
-		appErrs        = appendErrors{}
-		sampleLimitErr error
-		bucketLimitErr error
-		lset           labels.Labels     // Escapes to heap so hoisted out of loop.
-		e              exemplar.Exemplar // Escapes to heap so hoisted out of loop.
-		lastMeta       *metaEntry
-		lastMFName     []byte
+		appErrs                    = appendErrors{}
+		sampleLimitErr             error
+		scrapedSampleLimitExceeded bool
+		bucketLimitErr             error
+		lset                       labels.Labels     // Escapes to heap so hoisted out of loop.
+		e                          exemplar.Exemplar // Escapes to heap so hoisted out of loop.
+		lastMeta                   *metaEntry
+		lastMFName                 []byte
 	)
 
 	exemplars := make([]exemplar.Exemplar, 0, 1)
@@ -1688,6 +1691,11 @@ loop:
 		default:
 		}
 		total++
+		if sl.scrapedSampleLimit > 0 && total > sl.scrapedSampleLimit {
+			err = errSampleLimit
+			scrapedSampleLimitExceeded = true
+			break loop
+		}
 
 		t := defTime
 		if isHistogram {
@@ -1875,6 +1883,9 @@ loop:
 			err = sampleLimitErr
 		}
 		// We only want to increment this once per scrape, so this is Inc'd outside the loop.
+		sl.metrics.targetScrapeSampleLimit.Inc()
+	}
+	if scrapedSampleLimitExceeded {
 		sl.metrics.targetScrapeSampleLimit.Inc()
 	}
 	if bucketLimitErr != nil {

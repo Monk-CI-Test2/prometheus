@@ -7499,6 +7499,23 @@ func testDropsSeriesFromMetricRelabeling(t *testing.T, appV2 bool) {
 	require.NoError(t, app.Commit())
 }
 
+func TestScrapedSampleLimitBeforeMetricRelabeling(t *testing.T) {
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		sl, _ := newTestScrapeLoop(t, withAppendable(teststorage.NewAppendable(), appV2), func(sl *scrapeLoop) {
+			sl.scrapedSampleLimit = 1
+			sl.sampleMutator = func(labels.Labels) labels.Labels { return labels.EmptyLabels() }
+		})
+
+		app := sl.appender()
+		total, added, seriesAdded, err := app.append([]byte("metric_a 1\nmetric_b 2\n"), "text/plain", time.Time{})
+		require.ErrorIs(t, err, errSampleLimit)
+		require.Equal(t, 2, total)
+		require.Zero(t, added)
+		require.Zero(t, seriesAdded)
+		require.NoError(t, app.Rollback())
+	})
+}
+
 // noopFailureLogger is a minimal FailureLogger implementation for testing.
 type noopFailureLogger struct{}
 

@@ -123,13 +123,14 @@ func (sl *scrapeLoopAppenderV2) append(b []byte, contentType string, ts time.Tim
 		)
 	}
 	var (
-		appErrs        = appendErrors{}
-		sampleLimitErr error
-		bucketLimitErr error
-		lset           labels.Labels     // Escapes to heap so hoisted out of loop.
-		e              exemplar.Exemplar // Escapes to heap so hoisted out of loop.
-		lastMeta       *metaEntry
-		lastMFName     []byte
+		appErrs                    = appendErrors{}
+		sampleLimitErr             error
+		scrapedSampleLimitExceeded bool
+		bucketLimitErr             error
+		lset                       labels.Labels     // Escapes to heap so hoisted out of loop.
+		e                          exemplar.Exemplar // Escapes to heap so hoisted out of loop.
+		lastMeta                   *metaEntry
+		lastMFName                 []byte
 	)
 
 	exemplars := make([]exemplar.Exemplar, 0, 1)
@@ -186,6 +187,11 @@ loop:
 		default:
 		}
 		total++
+		if sl.scrapedSampleLimit > 0 && total > sl.scrapedSampleLimit {
+			err = errSampleLimit
+			scrapedSampleLimitExceeded = true
+			break loop
+		}
 
 		t := defTime
 		if isHistogram {
@@ -386,6 +392,9 @@ loop:
 			err = sampleLimitErr
 		}
 		// We only want to increment this once per scrape, so this is Inc'd outside the loop.
+		sl.metrics.targetScrapeSampleLimit.Inc()
+	}
+	if scrapedSampleLimitExceeded {
 		sl.metrics.targetScrapeSampleLimit.Inc()
 	}
 	if bucketLimitErr != nil {

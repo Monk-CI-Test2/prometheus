@@ -506,6 +506,9 @@ type GlobalConfig struct {
 	// More than this many samples post metric-relabeling will cause the scrape to
 	// fail. 0 means no limit.
 	SampleLimit uint `yaml:"sample_limit,omitempty"`
+	// More than this many samples in a scrape response before metric relabeling
+	// will cause the scrape to fail. 0 means no limit.
+	ScrapedSampleLimit uint `yaml:"scraped_sample_limit,omitempty"`
 	// More than this many targets after the target relabeling will cause the
 	// scrapes to fail. 0 means no limit.
 	TargetLimit uint `yaml:"target_limit,omitempty"`
@@ -718,6 +721,7 @@ func (c *GlobalConfig) isZero() bool {
 		!c.AlwaysScrapeClassicHistograms &&
 		c.BodySizeLimit == 0 &&
 		c.SampleLimit == 0 &&
+		c.ScrapedSampleLimit == 0 &&
 		c.TargetLimit == 0 &&
 		c.LabelLimit == 0 &&
 		c.LabelNameLengthLimit == 0 &&
@@ -806,6 +810,9 @@ type ScrapeConfig struct {
 	// More than this many samples post metric-relabeling will cause the scrape to
 	// fail. 0 means no limit.
 	SampleLimit uint `yaml:"sample_limit,omitempty"`
+	// More than this many samples in a scrape response before metric relabeling
+	// will cause the scrape to fail. 0 means no limit.
+	ScrapedSampleLimit uint `yaml:"scraped_sample_limit,omitempty"`
 	// More than this many targets after the target relabeling will cause the
 	// scrapes to fail. 0 means no limit.
 	TargetLimit uint `yaml:"target_limit,omitempty"`
@@ -918,6 +925,9 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	}
 	if c.SampleLimit == 0 {
 		c.SampleLimit = globalConfig.SampleLimit
+	}
+	if c.ScrapedSampleLimit == 0 {
+		c.ScrapedSampleLimit = globalConfig.ScrapedSampleLimit
 	}
 	if c.TargetLimit == 0 {
 		c.TargetLimit = globalConfig.TargetLimit
