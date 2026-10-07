@@ -22,6 +22,9 @@ import (
 
 func preallocExtend(f *os.File, sizeInBytes int64) error {
 	if err := preallocFixed(f, sizeInBytes); err != nil {
+		if err == unix.ENOSPC || err == unix.EDQUOT {
+			return preallocExtendTrunc(f, sizeInBytes)
+		}
 		return err
 	}
 	return preallocExtendTrunc(f, sizeInBytes)
@@ -34,7 +37,7 @@ func preallocFixed(f *os.File, sizeInBytes int64) error {
 		Length:  sizeInBytes,
 	}
 	err := unix.FcntlFstore(f.Fd(), unix.F_PREALLOCATE, fstore)
-	if err == nil || err == unix.ENOTSUP {
+	if err == nil || err == unix.ENOTSUP || err == unix.ENOSPC || err == unix.EDQUOT {
 		return nil
 	}
 	return err
