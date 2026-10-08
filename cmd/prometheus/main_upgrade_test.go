@@ -299,6 +299,7 @@ func ensureHealthyLogs(t *testing.T, r io.Reader) {
 }
 
 var testVersionUpgrade = flag.Bool("test.version-upgrade", false, "run resource-intensive and probably slow version upgrade tests")
+var testLTSVersion = flag.String("test.lts-version", "", "the LTS version to test upgrading from/downgrading to")
 
 // TestVersionUpgrade_UpgradeDowngradeLatestLTS verifies that Prometheus can
 // upgrade from the latest LTS release to the current build and then downgrade
@@ -313,9 +314,18 @@ func TestVersionUpgrade_UpgradeDowngradeLatestLTS(t *testing.T) {
 	start := time.Now()
 	rootDir := t.TempDir()
 
-	ltsPrefix := fetchLTSPrefix(t)
-	t.Logf("[%s] current LTS major.minor is %s from %s", time.Since(start), ltsPrefix, prometheusDocsLTSConfigURL)
-	ltsVersion, ltsAssetURL := fetchLatestLTSRelease(t, ltsPrefix)
+	var ltsVersion, ltsAssetURL string
+	if *testLTSVersion != "" {
+		ltsVersion = *testLTSVersion
+		ltsAssetURL = fmt.Sprintf(
+			"https://github.com/prometheus/prometheus/releases/download/v%s/prometheus-%s.%s-%s.tar.gz",
+			ltsVersion, ltsVersion, runtime.GOOS, runtime.GOARCH,
+		)
+	} else {
+		ltsPrefix := fetchLTSPrefix(t)
+		t.Logf("[%s] current LTS major.minor is %s from %s", time.Since(start), ltsPrefix, prometheusDocsLTSConfigURL)
+		ltsVersion, ltsAssetURL = fetchLatestLTSRelease(t, ltsPrefix)
+	}
 	t.Logf("[%s] using LTS tag %s from %s", time.Since(start), ltsVersion, ltsAssetURL)
 
 	rwServer := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))

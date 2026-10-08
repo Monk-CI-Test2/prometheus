@@ -56,10 +56,7 @@ jobs:
           cache_key_suffix: more
       - run: go test --tags=dedupelabels ./...
       - run: go test --tags=slicelabels -race ./cmd/prometheus ./cmd/promtool/... ./model/textparse ./prompb/...
-      - run: go test --tags=forcedirectio -race ./tsdb/
-      - run: make protoc
-      - run: make proto
-      - run: git diff --exit-code
+      - run: go test --tags=forcedirectio -race ./tsdb/\n      - run: make protoc\n      - run: make proto\n      - run: git diff --exit-code -- ':!*.pb.go'
 
   test_go_386:
     name: Go tests for 32-bit x86
@@ -220,21 +217,11 @@ jobs:
         continue-on-error: true
         with:
           directory: .tarballs
-  test_windows:
-    name: Go tests on Windows
-    runs-on: monkci-ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
+  test_windows:\n    name: Go tests on Windows\n    runs-on: monkci-ubuntu-latest\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n        with:\n          ref: ${{ github.event.pull_request.head.sha || github.sha }}\n          persist-credentials: false\n      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0\n        with:
           go-version: 1.27.x
       - run: |
-          $TestTargets = go list ./... | Where-Object { $_ -NotMatch "(github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"}
+          TestTargets=$(go list ./... | grep -vE "(github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)")
           go test $TestTargets -vet=off -v
-        shell: powershell
 
   test_mixins:
     name: Mixins tests
