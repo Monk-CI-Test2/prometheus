@@ -216,3 +216,26 @@ spec:
 		})
 	}
 }
+
+// Namespace selectors must never modify another namespace sharing a prefix.
+func TestFilterNamespaceSelector(t *testing.T) {
+	for _, tc := range []struct {
+		namespace string
+		want      string
+	}{
+		{"team", "9"}, {"team-preview", "2"}, {"team2", "2"}, {"other", "2"}, {"", "2"},
+	} {
+		t.Run(tc.namespace, func(t *testing.T) {
+			node := yaml.MustParse("apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: app\n  namespace: " + tc.namespace + "\nspec:\n  replicas: 2\n")
+			_, err := (Filter{Replica: types.Replica{Name: "app", Namespace: "team", Count: 9}, FieldSpec: types.FieldSpec{Path: "spec/replicas"}}).Filter([]*yaml.RNode{node})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := node.Pipe(yaml.Lookup("spec", "replicas"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			assert.Equal(t, tc.want, got.YNode().Value)
+		})
+	}
+}

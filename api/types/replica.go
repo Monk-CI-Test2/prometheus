@@ -11,6 +11,9 @@ type Replica struct {
 	// The name of the resource to change the replica count
 	Name string `json:"name,omitempty" yaml:"name,omitempty"`
 
+	// Namespace restricts matching to an exact namespace. Empty matches all namespaces.
+	Namespace string `json:"namespace,omitempty" yaml:"namespace,omitempty"`
+
 	// The number of replicas required.
 	Count int64 `json:"count" yaml:"count"`
 }

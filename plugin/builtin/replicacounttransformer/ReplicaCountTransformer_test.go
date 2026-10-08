@@ -4,6 +4,7 @@
 package main_test
 
 import (
+	"fmt"
 	"testing"
 
 	kusttest_test "sigs.k8s.io/kustomize/api/testutils/kusttest"
@@ -220,5 +221,81 @@ spec:
 	if err.Error() !=
 		"resource with name service does not match a config with the following GVK [Deployment.[noVer].[noGrp]]" {
 		t.Fatalf("Unexpected error: %v", err)
+	}
+}
+
+func TestReplicaNamespaceSelector(t *testing.T) {
+	th := kusttest_test.MakeEnhancedHarness(t).PrepBuiltin("ReplicaCountTransformer")
+	defer th.Reset()
+	rm := th.LoadAndRunTransformer(`
+apiVersion: builtin
+kind: ReplicaCountTransformer
+metadata:
+  name: selector
+replica:
+  name: app
+  namespace: team
+  count: 9
+fieldSpecs:
+- path: spec/replicas
+  kind: Deployment
+`, `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+  namespace: team
+spec:
+  replicas: 2
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+  namespace: team-preview
+spec:
+  replicas: 2
+`)
+	for _, r := range rm.Resources() {
+		want := "2"
+		if r.GetNamespace() == "team" {
+			want = "9"
+		}
+		got, err := r.GetFieldValue("spec.replicas")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fmt.Sprint(got) != want {
+			t.Errorf("namespace %s: replicas = %v, want %s", r.GetNamespace(), got, want)
+		}
+	}
+}
+
+func TestReplicaNamespaceSelectorNoExactMatch(t *testing.T) {
+	th := kusttest_test.MakeEnhancedHarness(t).PrepBuiltin("ReplicaCountTransformer")
+	defer th.Reset()
+	err := th.ErrorFromLoadAndRunTransformer(`
+apiVersion: builtin
+kind: ReplicaCountTransformer
+metadata:
+  name: selector
+replica:
+  name: app
+  namespace: team
+  count: 9
+fieldSpecs:
+- path: spec/replicas
+  kind: Deployment
+`, `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+  namespace: team-preview
+spec:
+  replicas: 2
+`)
+	if err == nil {
+		t.Fatal("expected error when the exact namespace has no matching resource")
 	}
 }
