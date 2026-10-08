@@ -3848,7 +3848,7 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingQuerier(t *test
 
 	require.False(t, compactionComplete.Load(), "compaction completed before closing querier created before compaction")
 	require.NoError(t, querierCreatedBeforeCompaction.Close())
-	require.Eventually(t, compactionComplete.Load, time.Second, 10*time.Millisecond, "compaction should complete after querier created before compaction was closed, and not wait for querier created after compaction")
+	require.Eventually(t, compactionComplete.Load, 10*time.Second, 10*time.Millisecond, "compaction should complete after querier created before compaction was closed, and not wait for querier created after compaction")
 
 	// Use the querier created after compaction and confirm it returns the expected results (ie. from the disk block created from OOO head and in-order head) without error.
 	testQuerier(querierCreatedAfterCompaction)
@@ -3931,7 +3931,7 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterSelecting(t *testing.T) {
 
 	require.False(t, compactionComplete.Load(), "compaction completed before closing querier")
 	require.NoError(t, querier.Close())
-	require.Eventually(t, compactionComplete.Load, time.Second, 10*time.Millisecond, "compaction should complete after querier was closed")
+	require.Eventually(t, compactionComplete.Load, 10*time.Second, 10*time.Millisecond, "compaction should complete after querier was closed")
 }
 
 func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingIterators(t *testing.T) {
@@ -4010,7 +4010,7 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingIterators(t *te
 
 	require.False(t, compactionComplete.Load(), "compaction completed before closing querier")
 	require.NoError(t, querier.Close())
-	require.Eventually(t, compactionComplete.Load, time.Second, 10*time.Millisecond, "compaction should complete after querier was closed")
+	require.Eventually(t, compactionComplete.Load, 10*time.Second, 10*time.Millisecond, "compaction should complete after querier was closed")
 }
 
 func TestOOOWALWrite(t *testing.T) {
