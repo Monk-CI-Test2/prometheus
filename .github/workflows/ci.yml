@@ -14,7 +14,7 @@ permissions:
 jobs:
   pre-pull-image:
     name: Pre-pull Docker images
-    runs-on: monkci-ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-4
     steps:
       - name: Pull golang-builder images
         run: |
@@ -194,7 +194,7 @@ jobs:
           directory: .tarballs
   test_windows:
     name: Go tests on Windows
-    runs-on: monkci-ubuntu-latest
+    runs-on: monkci-ubuntu-24.04-4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
