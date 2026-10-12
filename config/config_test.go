@@ -3655,3 +3655,23 @@ func TestGetScrapeConfigs_Loaded(t *testing.T) {
 		require.NoError(t, err)
 	})
 }
+
+func TestLoadLabelRename(t *testing.T) {
+	cfg, err := Load(`
+scrape_configs:
+  - job_name: api
+    static_configs:
+      - targets: [localhost:9090]
+    relabel_configs:
+      - action: labelrename
+        regex: old_(.*)
+        replacement: '${1}'
+    metric_relabel_configs:
+      - action: labelrename
+        regex: legacy_(.*)
+        replacement: '${1}'
+`, promslog.NewNopLogger())
+	require.NoError(t, err)
+	require.Equal(t, "labelrename", string(cfg.ScrapeConfigs[0].RelabelConfigs[0].Action))
+	require.Equal(t, "labelrename", string(cfg.ScrapeConfigs[0].MetricRelabelConfigs[0].Action))
+}

@@ -58,6 +58,8 @@ const (
 	HashMod Action = "hashmod"
 	// LabelMap copies labels to other labelnames based on a regex.
 	LabelMap Action = "labelmap"
+	// LabelRename atomically renames labels based on a regex.
+	LabelRename Action = "labelrename"
 	// LabelDrop drops any label matching the regex.
 	LabelDrop Action = "labeldrop"
 	// LabelKeep drops any label not matching the regex.
@@ -75,7 +77,7 @@ func (a *Action) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 	switch act := Action(strings.ToLower(s)); act {
-	case Replace, Keep, Drop, HashMod, LabelMap, LabelDrop, LabelKeep, Lowercase, Uppercase, KeepEqual, DropEqual:
+	case Replace, Keep, Drop, HashMod, LabelMap, LabelRename, LabelDrop, LabelKeep, Lowercase, Uppercase, KeepEqual, DropEqual:
 		*a = act
 		return nil
 	}
@@ -162,7 +164,7 @@ func (c *Config) Validate(nameValidationScheme model.ValidationScheme) error {
 	if (c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && c.Replacement != DefaultRelabelConfig.Replacement {
 		return fmt.Errorf("'replacement' can not be set for %s action", c.Action)
 	}
-	if c.Action == LabelMap && !isValidLabelNameWithRegexVarFn(c.Replacement) {
+	if (c.Action == LabelMap || c.Action == LabelRename) && !isValidLabelNameWithRegexVarFn(c.Replacement) {
 		return fmt.Errorf("%q is invalid 'replacement' for %s action", c.Replacement, c.Action)
 	}
 	if c.Action == HashMod && !c.NameValidationScheme.IsValidLabelName(c.TargetLabel) {
@@ -347,6 +349,17 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 				res := cfg.Regex.ReplaceAllString(l.Name, cfg.Replacement)
 				lb.Set(res, l.Value)
 			}
+		})
+	case LabelRename:
+		lb.RenameLabels(func(name string) string {
+			if !cfg.Regex.MatchString(name) {
+				return name
+			}
+			target := cfg.Regex.ReplaceAllString(name, cfg.Replacement)
+			if !cfg.NameValidationScheme.IsValidLabelName(target) {
+				return name
+			}
+			return target
 		})
 	case LabelDrop:
 		lb.Range(func(l labels.Label) {

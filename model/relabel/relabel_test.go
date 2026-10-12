@@ -1182,3 +1182,29 @@ func TestRegexp_JSONUnmarshalThenMarshal(t *testing.T) {
 		})
 	}
 }
+
+func TestLabelRename(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		regex       string
+		replacement string
+		want        labels.Labels
+	}{
+		{"prefix", "old_(.*)", "$1", labels.FromStrings("job", "api", "zone", "west")},
+		{"identity", "(.*)", "$1", labels.FromStrings("job", "api", "old_zone", "west")},
+		{"collision", "old_.*", "job", labels.FromStrings("job", "api", "old_zone", "west")},
+		{"invalid_destination", "old_.*", "9invalid", labels.FromStrings("job", "api", "old_zone", "west")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := DefaultRelabelConfig
+			cfg.Action = LabelRename
+			cfg.Regex = MustNewRegexp(tc.regex)
+			cfg.Replacement = tc.replacement
+			// Invalid expanded names are ignored at runtime under legacy validation.
+			cfg.NameValidationScheme = model.LegacyValidation
+			b := labels.NewBuilder(labels.FromStrings("job", "api", "old_zone", "west"))
+			require.True(t, ProcessBuilder(b, &cfg))
+			require.True(t, labels.Equal(tc.want, b.Labels()), "expected %s, got %s", tc.want, b.Labels())
+		})
+	}
+}

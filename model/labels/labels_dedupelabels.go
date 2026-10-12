@@ -841,3 +841,14 @@ func (b *ScratchBuilder) Overwrite(ls *Labels) {
 func SizeOfLabels(name, value string, n uint64) uint64 {
 	return uint64(len(name)+len(value)) + n*4 // Assuming most symbol-table entries are 2 bytes long.
 }
+
+// RenameLabels atomically maps label names using rename against the current builder.
+// Identity mappings preserve labels. Collisions leave the entire builder unchanged.
+// The callback must not mutate the builder or retain references to label names.
+func (b *Builder) RenameLabels(rename func(string) string) {
+	b.Range(func(l Label) {
+		target := rename(l.Name)
+		b.Set(target, b.Get(l.Name))
+		b.Del(l.Name)
+	})
+}

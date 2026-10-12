@@ -1073,3 +1073,29 @@ func TestMarshaling(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, f, gotFY)
 }
+
+func TestBuilderRenameLabels(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		mapping map[string]string
+		want    Labels
+	}{
+		{"identity", map[string]string{}, FromStrings("a", "first", "b", "second")},
+		{"chain", map[string]string{"a": "b", "b": "c"}, FromStrings("b", "first", "c", "second")},
+		{"swap", map[string]string{"a": "b", "b": "a"}, FromStrings("a", "second", "b", "first")},
+		{"collision", map[string]string{"a": "b"}, FromStrings("a", "first", "b", "second")},
+		{"duplicate_destination", map[string]string{"a": "c", "b": "c"}, FromStrings("a", "first", "b", "second")},
+		{"disjoint", map[string]string{"a": "x", "b": "y"}, FromStrings("x", "first", "y", "second")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := NewBuilder(FromStrings("a", "first", "b", "second"))
+			b.RenameLabels(func(name string) string {
+				if target, ok := tc.mapping[name]; ok {
+					return target
+				}
+				return name
+			})
+			require.True(t, Equal(tc.want, b.Labels()), "expected %s, got %s", tc.want, b.Labels())
+		})
+	}
+}
