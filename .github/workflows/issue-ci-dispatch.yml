@@ -1,0 +1,73 @@
+name: Dispatch CI investigation from issue
+
+# Fires when a new issue lands ("on arrival"), only for issues carrying one of the
+# labels below. Parses failed_commit / run_id / success_commit / workflow_name / repo
+# out of the issue body and dispatches wfcheck.yml, passing it the failed commit and
+# the workflow_name to re-run there. wfcheck reproduces the failure and, once it has,
+# dispatches ci-investigate.yml itself.
+#
+# `repo` names the owner/repo the failing commit actually belongs to - the /loop agent
+# watching for failures may be watching a repo other than the one this hook lives in
+# (the "remote" case), so it's always required. It's passed to wfcheck as --upstream,
+# which imports the commit here before re-running workflow_name on it.
+#
+# To plug this into another repo: copy this file and edit TRIGGER_LABELS / the
+# gh workflow run call at the bottom to point at your target workflow.
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  actions: write   # to dispatch wfcheck.yml
+  contents: read   # gh workflow run resolves the default branch (GraphQL) when --ref is omitted
+
+jobs:
+  dispatch:
+    if: contains(github.event.issue.labels.*.name, 'ci-investigate') || contains(github.event.issue.labels.*.name, 'ci-debug')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Parse issue arguments
+        id: parse
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          # Expects lines in the issue body like:
+          #   failed_commit: <sha>
+          #   run_id: <github actions run id>
+          #   success_commit: <sha>
+          #   workflow_name: <name or filename of the workflow to re-run on failed_commit>
+          #   repo: <owner/repo that failed_commit belongs to>
+          get_field() {
+            printf '%s\n' "$ISSUE_BODY" | grep -iE "^[[:space:]]*$1[[:space:]]*:" | head -n1 | cut -d: -f2-
+          }
+
+          strip() { tr -d '[:space:]'; }
+
+          failed_commit=$(get_field failed_commit | strip)
+          run_id=$(get_field run_id | strip)
+          success_commit=$(get_field success_commit | strip)
+          workflow_name=$(get_field workflow_name | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+          repo=$(get_field repo | strip)
+
+          [[ "$failed_commit" =~ ^[0-9a-fA-F]{7,40}$ ]] || { echo "::error::failed_commit missing or invalid"; exit 1; }
+          [[ "$run_id" =~ ^[0-9]+$ ]] || { echo "::error::run_id missing or not numeric"; exit 1; }
+          [[ "$success_commit" =~ ^[0-9a-fA-F]{7,40}$ ]] || { echo "::error::success_commit missing or invalid"; exit 1; }
+          [[ -n "$workflow_name" ]] || { echo "::error::workflow_name missing - which workflow must be re-run on failed_commit?"; exit 1; }
+          [[ "$repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "::error::repo missing or not in owner/repo form"; exit 1; }
+
+          echo "failed_commit=$failed_commit" >> "$GITHUB_OUTPUT"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "success_commit=$success_commit" >> "$GITHUB_OUTPUT"
+          echo "workflow_name=$workflow_name" >> "$GITHUB_OUTPUT"
+          echo "repo=$repo" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch wfcheck to reproduce the failure
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run wfcheck.yml --repo "${{ github.repository }}" \
+            --ref "${{ github.event.repository.default_branch }}" \
+            -f commit="${{ steps.parse.outputs.failed_commit }}" \
+            -f workflow_name="${{ steps.parse.outputs.workflow_name }}" \
+            -f upstream="${{ steps.parse.outputs.repo }}"

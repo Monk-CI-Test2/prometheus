@@ -174,7 +174,7 @@ func (node *BinaryExpr) getMatchingStr() string {
 		}
 
 		if vm.FillValues.LHS != nil || vm.FillValues.RHS != nil {
-			if vm.FillValues.LHS == vm.FillValues.RHS {
+			if vm.FillValues.LHS != nil && vm.FillValues.RHS != nil && *vm.FillValues.LHS == *vm.FillValues.RHS {
 				matching += fmt.Sprintf(" fill (%v)", *vm.FillValues.LHS)
 			} else {
 				if vm.FillValues.LHS != nil {
@@ -325,10 +325,10 @@ func (node *SubqueryExpr) ShortString() string {
 // getSubqueryTimeSuffix returns the '[<range>:<step>] @ <timestamp> offset <offset>' suffix of the subquery.
 func (node *SubqueryExpr) getSubqueryTimeSuffix() string {
 	step := ""
-	if node.Step != 0 {
-		step = model.Duration(node.Step).String()
-	} else if node.StepExpr != nil {
+	if node.StepExpr != nil {
 		step = node.StepExpr.String()
+	} else if node.Step != 0 {
+		step = model.Duration(node.Step).String()
 	}
 	offset := ""
 	switch {

@@ -1029,7 +1029,8 @@ func BenchmarkRelabel(b *testing.B) {
 				"__scheme__", "http",
 				"__scrape_interval__", "15s",
 				"__scrape_timeout__", "10s",
-				"job", "kubernetes-pods"),
+				"job", "kubernetes-pods",
+			),
 		},
 		{
 			name: "static label pair",
@@ -1109,6 +1110,19 @@ replacement: $1
 action: replace
 `,
 		},
+		{
+			// https://github.com/prometheus/prometheus/issues/18652:
+			// explicit empty separator/replacement/regex must survive a YAML round-trip
+			// because they are distinct from the defaults (";", "$1", "(.*)").
+			name: "Explicit empty separator and replacement",
+			inputYaml: `source_labels: [namespace, k8s_app]
+separator: ""
+regex: ""
+target_label: target_cluster
+replacement: ""
+action: replace
+`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -1144,15 +1158,15 @@ func TestRegexp_JSONUnmarshalThenMarshal(t *testing.T) {
 	}{
 		{
 			name:  "Empty regex",
-			input: `{"regex":""}`,
+			input: `{"separator":"","regex":"","replacement":""}`,
 		},
 		{
 			name:  "string literal",
-			input: `{"regex":"foo"}`,
+			input: `{"separator":"","regex":"foo","replacement":""}`,
 		},
 		{
 			name:  "regex",
-			input: `{"regex":".*foo.*"}`,
+			input: `{"separator":"","regex":".*foo.*","replacement":""}`,
 		},
 	}
 	for _, test := range tests {
@@ -1165,6 +1179,32 @@ func TestRegexp_JSONUnmarshalThenMarshal(t *testing.T) {
 			require.NoError(t, err)
 
 			require.Equal(t, test.input, string(marshalled))
+		})
+	}
+}
+
+func TestLabelRename(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		regex       string
+		replacement string
+		want        labels.Labels
+	}{
+		{"prefix", "old_(.*)", "$1", labels.FromStrings("job", "api", "zone", "west")},
+		{"identity", "(.*)", "$1", labels.FromStrings("job", "api", "old_zone", "west")},
+		{"collision", "old_.*", "job", labels.FromStrings("job", "api", "old_zone", "west")},
+		{"invalid_destination", "old_.*", "9invalid", labels.FromStrings("job", "api", "old_zone", "west")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := DefaultRelabelConfig
+			cfg.Action = LabelRename
+			cfg.Regex = MustNewRegexp(tc.regex)
+			cfg.Replacement = tc.replacement
+			// Invalid expanded names are ignored at runtime under legacy validation.
+			cfg.NameValidationScheme = model.LegacyValidation
+			b := labels.NewBuilder(labels.FromStrings("job", "api", "old_zone", "west"))
+			require.True(t, ProcessBuilder(b, &cfg))
+			require.True(t, labels.Equal(tc.want, b.Labels()), "expected %s, got %s", tc.want, b.Labels())
 		})
 	}
 }

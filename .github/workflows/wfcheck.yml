@@ -1,0 +1,274 @@
+# Example of plugging wfcheck into a repo: copy this file to .github/workflows/wfcheck.yml
+# in any repo. It's fully self-contained (the tool is embedded below) - no other files needed.
+#
+# Run it from the Actions tab ("Run workflow") with a commit SHA and a workflow name, and it
+# dispatches that workflow against that commit in *this* repo, then reports only the jobs
+# that failed. Green = failures found and printed above; red = nothing failed.
+name: wfcheck
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Commit SHA to run the workflow at
+        required: true
+      workflow_name:
+        description: Name (or filename) of the workflow to check
+        required: true
+      upstream:
+        description: >-
+          Optional owner/repo (or git URL) to import the commit from if it isn't
+          found in this repo, e.g. helm/helm
+        required: false
+        default: ""
+
+permissions:
+  contents: write   # to push/delete the throwaway branch wfcheck runs the target workflow on
+  actions: write     # to dispatch the target workflow and read its runs/jobs
+
+jobs:
+  wfcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write wfcheck.py
+        run: |
+          cat <<'PYEOF' > wfcheck.py
+          #!/usr/bin/env python3
+          """
+          wfcheck - run one or more named GitHub Actions workflows against a commit and print only
+          the jobs that failed.
+
+          Usage:
+              wfcheck.py <owner/repo> <commit> <workflow-name> [<workflow-name> ...]
+
+          Exit 0 if any job failed anywhere (only the failures are printed), exit 1 if none did.
+          """
+          import json
+          import os
+          import subprocess
+          import sys
+          import tempfile
+          import time
+          import uuid
+          from datetime import datetime, timezone
+
+          TIMEOUT = 1800
+          POLL_INTERVAL = 10
+
+
+          def gh(*args, check=True, input=None):
+              proc = subprocess.run(["gh", *args], input=input, capture_output=True, text=True)
+              if check and proc.returncode != 0:
+                  sys.exit(f"gh {' '.join(args)} failed: {proc.stderr.strip()}")
+              return proc.stdout
+
+
+          def gh_json(*args, **kw):
+              """For full JSON responses, or a --jq filter that itself produces JSON
+              (e.g. an object/array). A --jq filter on a scalar (e.g. ".sha") comes back
+              as raw unquoted text from `gh api` - read that with gh(...).strip() instead."""
+              return json.loads(gh(*args, **kw))
+
+
+          def gh_post_json(path, body):
+              return gh_json("api", path, "-X", "POST", "--input", "-", input=json.dumps(body))
+
+
+          def commit_exists(repo, commit):
+              return bool(gh("api", f"repos/{repo}/commits/{commit}", "--jq", ".sha", check=False).strip())
+
+
+          def import_commit(repo, commit, upstream):
+              """Fetch `commit` from `upstream` and push it into `repo` on a throwaway
+              branch, so it becomes a reachable object there (GitHub scopes commit
+              lookups per-repo, so the SHA must exist on some ref in `repo` itself)."""
+              token = gh("auth", "token").strip()
+              push_url = f"https://x-access-token:{token}@github.com/{repo}.git"
+              upstream_url = upstream if "://" in upstream else f"https://github.com/{upstream}.git"
+
+              def run(*args):
+                  proc = subprocess.run(["git", *args], cwd=tmp, capture_output=True, text=True)
+                  if proc.returncode != 0:
+                      sys.exit(f"git {' '.join(args)} failed: {proc.stderr.strip()}")
+
+              with tempfile.TemporaryDirectory(prefix="wfcheck-import-") as tmp:
+                  run("init", "-q")
+                  run("fetch", "-q", upstream_url, commit)
+                  branch = f"wfcheck-import/{commit[:12]}"
+                  run("push", "-q", push_url, f"FETCH_HEAD:refs/heads/{branch}")
+                  return branch
+
+
+          def patch_workflow_dispatch(repo, commit, workflows):
+              """Build a new commit on top of `commit` with each requested workflow file
+              replaced by its current version on `repo`'s default branch. A workflow can
+              only be run on-demand against a ref whose *own* copy of the file declares
+              workflow_dispatch, so if `commit` predates that trigger (e.g. it came from
+              an upstream repo that never had it), dispatch would 422. Everything else in
+              the tree - source, tests, all other files - stays pinned to `commit`."""
+              base_tree = gh("api", f"repos/{repo}/git/commits/{commit}", "--jq", ".tree.sha").strip()
+              entries = []
+              for w in workflows:
+                  blob_sha = gh("api", f"repos/{repo}/contents/{w['path']}", "--jq", ".sha").strip()
+                  entries.append({"path": w["path"], "mode": "100644", "type": "blob", "sha": blob_sha})
+
+              tree = gh_post_json(f"repos/{repo}/git/trees", {"base_tree": base_tree, "tree": entries})
+              new_commit = gh_post_json(f"repos/{repo}/git/commits", {
+                  "message": f"wfcheck: enable workflow_dispatch at {commit}",
+                  "tree": tree["sha"],
+                  "parents": [commit],
+              })
+              return new_commit["sha"]
+
+
+          def find_workflow(repo, name):
+              workflows = gh_json("api", f"repos/{repo}/actions/workflows", "--paginate", "--jq", ".workflows")
+              for w in workflows:
+                  filename = w["path"].rsplit("/", 1)[-1]
+                  if name.lower() in (w["name"].lower(), filename.lower(), filename.rsplit(".", 1)[0].lower()):
+                      return w
+              sys.exit(f"workflow {name!r} not found in {repo}")
+
+
+          def run_workflow(repo, workflow, branch):
+              dispatched_at = datetime.now(timezone.utc)
+              gh("workflow", "run", str(workflow["id"]), "--repo", repo, "--ref", branch)
+
+              run_id = None
+              for _ in range(30):  # up to ~60s for the run to register
+                  time.sleep(2)
+                  runs = gh_json("run", "list", "--repo", repo, "--workflow", str(workflow["id"]),
+                                  "--json", "databaseId,createdAt,event,headBranch")
+                  matches = [r for r in runs if r["headBranch"] == branch and r["event"] == "workflow_dispatch"
+                             and datetime.fromisoformat(r["createdAt"].replace("Z", "+00:00")) >= dispatched_at]
+                  if matches:
+                      run_id = matches[0]["databaseId"]
+                      break
+              if run_id is None:
+                  sys.exit(f"{workflow['name']}: run did not start within 60s")
+
+              deadline = time.time() + TIMEOUT
+              while True:
+                  if gh_json("run", "view", str(run_id), "--repo", repo, "--json", "status")["status"] == "completed":
+                      break
+                  if time.time() > deadline:
+                      sys.exit(f"{workflow['name']}: run {run_id} did not complete within {TIMEOUT}s")
+                  time.sleep(POLL_INTERVAL)
+
+              run = gh_json("run", "view", str(run_id), "--repo", repo, "--json", "url")
+              jobs = gh_json("api", f"repos/{repo}/actions/runs/{run_id}/jobs", "--jq", ".jobs")
+              summary = [{"name": j["name"], "conclusion": j["conclusion"], "url": j["html_url"],
+                          "steps": [{"name": s["name"], "conclusion": s["conclusion"]}
+                                    for s in j.get("steps", [])]} for j in jobs]
+              jobs_path = "wfcheck_jobs.json"
+              all_jobs = json.load(open(jobs_path)) if os.path.exists(jobs_path) else {}
+              all_jobs[workflow["name"]] = {"run_url": run["url"], "jobs": summary}
+              with open(jobs_path, "w") as f:
+                  json.dump(all_jobs, f, indent=2)
+
+              print(f"[debug] {workflow['name']}: {len(jobs)} job(s) total ({run['url']})")
+              for j in jobs:
+                  print(f"[debug]   - {j['name']}: {j['conclusion']}")
+
+              failed = [j for j in jobs if j["conclusion"] not in ("success", "skipped")]
+              if not failed:
+                  print(f"{workflow['name']}: no jobs failed ({run['url']})")
+                  return False
+
+              log_text = gh("run", "view", str(run_id), "--repo", repo, "--log-failed")
+              by_job = {}
+              for line in log_text.splitlines():
+                  by_job.setdefault(line.split("\t", 1)[0], []).append(line)
+
+              print(f"{workflow['name']}: {len(failed)} job(s) failed ({run['url']})\n")
+              for j in failed:
+                  print(f"=== {j['name']} ({j['conclusion']}) ===")
+                  print("\n".join(by_job.get(j["name"], [])) or "(no failed-step log lines captured)")
+                  print()
+              return True
+
+
+          def main():
+              args = sys.argv[1:]
+              upstream = None
+              if "--upstream" in args:
+                  i = args.index("--upstream")
+                  upstream = args[i + 1]
+                  del args[i:i + 2]
+
+              if len(args) < 3:
+                  sys.exit("usage: wfcheck.py <owner/repo> <commit> <workflow-name> [<workflow-name> ...] "
+                            "[--upstream <owner/repo-or-url>]")
+              repo, commit, *names = args
+
+              if not commit_exists(repo, commit):
+                  if not upstream:
+                      sys.exit(f"commit {commit} not found in {repo}; pass --upstream <owner/repo> to import it")
+                  print(f"commit {commit} not found in {repo}; importing from {upstream}...")
+                  import_commit(repo, commit, upstream)
+
+              # commit_exists() can pass (e.g. a prior run's wfcheck-import/* branch still
+              # existed) and then this lookup still fail if that branch has since been
+              # deleted - re-import once before giving up, instead of just retrying the
+              # same failing call.
+              sha = gh("api", f"repos/{repo}/commits/{commit}", "--jq", ".sha", check=False).strip()
+              if not sha and upstream:
+                  print(f"commit {commit} no longer resolvable in {repo}; re-importing from {upstream}...")
+                  import_commit(repo, commit, upstream)
+                  sha = gh("api", f"repos/{repo}/commits/{commit}", "--jq", ".sha", check=False).strip()
+              if not sha:
+                  sys.exit(f"commit {commit} not resolvable in {repo}")
+              commit = sha
+              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                  f.write(f"resolved_commit={commit}\n")
+              workflows = [find_workflow(repo, n) for n in names]
+
+              dispatch_commit = patch_workflow_dispatch(repo, commit, workflows)
+
+              branch = f"wfcheck/{uuid.uuid4().hex[:12]}"
+              gh("api", f"repos/{repo}/git/refs", "-f", f"ref=refs/heads/{branch}", "-f", f"sha={dispatch_commit}")
+              try:
+                  any_failed = any([run_workflow(repo, w, branch) for w in workflows])
+              finally:
+                  gh("api", "-X", "DELETE", f"repos/{repo}/git/refs/heads/{branch}", check=False)
+
+              sys.exit(0 if any_failed else 1)
+
+
+          if __name__ == "__main__":
+              main()
+          PYEOF
+
+      - name: Run wfcheck
+        id: run
+        env:
+          # The org caps GITHUB_TOKEN to read-only, but wfcheck needs to push a throwaway
+          # branch to import/dispatch the target commit - use a PAT with Contents: Read and
+          # write scoped to this repo instead (see the setup note at the top of this file).
+          GH_TOKEN: ${{ secrets.WFCHECK_PUSH_TOKEN }}
+          UPSTREAM: ${{ inputs.upstream }}
+        run: |
+          args=("$GITHUB_REPOSITORY" "${{ inputs.commit }}" "${{ inputs.workflow_name }}")
+          if [ -n "$UPSTREAM" ]; then
+            args+=(--upstream "$UPSTREAM")
+          fi
+          python3 -u wfcheck.py "${args[@]}" | tee -a "$GITHUB_STEP_SUMMARY" failed_logs.txt
+
+      # Only reached when the step above succeeded, i.e. wfcheck reproduced a failure.
+      - name: Upload failure logs and job summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: wfcheck-logs-${{ github.run_id }}
+          path: |
+            failed_logs.txt
+            wfcheck_jobs.json
+          retention-days: 7
+
+      - name: Dispatch ci-investigate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run ci-investigate.yml --repo "$GITHUB_REPOSITORY" \
+            -f failed_commit="${{ steps.run.outputs.resolved_commit }}" \
+            -f wfcheck_run_id="${{ github.run_id }}" \
+            -f log_artifact="wfcheck-logs-${{ github.run_id }}"

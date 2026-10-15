@@ -1,0 +1,174 @@
+name: CI investigation (Gemini + Serena)
+
+# Dispatched directly by wfcheck.yml once it reproduces a real CI failure. wfcheck passes
+# the resolved failing commit plus the name of the artifact holding the failure logs it
+# already captured - this workflow does no fetching of its own beyond downloading that one
+# artifact, and computes the code diff locally from git history.
+#
+# A Vertex AI Gemini model then investigates using Serena's MCP tools (the same server the
+# local ci-debugger plugin uses, but with editing tools enabled instead of the plugin's
+# read-only restriction) and, if it finds a safe fix, commits it. If the failing commit is on
+# the repo's default branch the fix is pushed to a new branch and opened as a PR instead of
+# landing directly on it; direct pushes only ever go to a non-default branch. Only one
+# attempt is made - if the fix doesn't land, this stops rather than retrying.
+#
+# One-time setup required before this can run:
+#   - A GCP Workload Identity Federation pool/provider trusting this repo's GitHub Actions,
+#     bound to a service account granted `roles/aiplatform.user` on the target project.
+#   - Service account agentic-foundation-test@monkcidev.iam.gserviceaccount.com (project
+#     monkcidev) is hardcoded below; it needs roles/aiplatform.user on the project and
+#     roles/iam.workloadIdentityUser for this repo's WIF principal.
+#   - Repository (or organization) variables:
+#       GCP_WORKLOAD_IDENTITY_PROVIDER  - full WIF provider resource name
+#       GCP_LOCATION                    - Vertex AI region, e.g. us-central1
+#   - No API key is needed: auth to Vertex AI is via the Application Default Credentials
+#     minted by the `google-github-actions/auth` step below.
+
+on:
+  workflow_dispatch:
+    inputs:
+      failed_commit:
+        description: Resolved full SHA of the commit wfcheck reproduced the failure at
+        required: true
+        type: string
+      wfcheck_run_id:
+        description: Run ID of the wfcheck run holding the failure-log artifact
+        required: true
+        type: string
+      log_artifact:
+        description: Name of the artifact on that run containing failed_logs.txt
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+  id-token: write
+
+jobs:
+  investigate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout at failed commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.failed_commit }}
+          fetch-depth: 0
+
+      - name: Determine target branch
+        id: branch
+        run: |
+          default_branch=$(git remote show origin | sed -n '/HEAD branch/s/.*: //p')
+          branch=$(git for-each-ref --format='%(refname:short)' --contains "${{ inputs.failed_commit }}" refs/remotes/origin \
+                     | grep -v '^origin/HEAD$' | sed 's#^origin/##' | head -n1)
+          branch="${branch:-$default_branch}"
+
+          echo "default_branch=$default_branch" >> "$GITHUB_OUTPUT"
+          if [[ "$branch" == "$default_branch" ]]; then
+            echo "mode=pr" >> "$GITHUB_OUTPUT"
+            echo "fix_branch=ci-fix/${{ inputs.wfcheck_run_id }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=direct" >> "$GITHUB_OUTPUT"
+            echo "fix_branch=$branch" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compute diff and commit history
+        run: |
+          git diff "${{ inputs.failed_commit }}^" "${{ inputs.failed_commit }}" > ci_investigate_diff.patch
+          git log -n 30 --stat --format='commit %H%nAuthor: %an%nDate: %ad%n%n    %s%n' \
+            "${{ inputs.failed_commit }}" > ci_investigate_history.txt
+
+      - name: Download failure logs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download "${{ inputs.wfcheck_run_id }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "${{ inputs.log_artifact }}" \
+            --dir .
+
+      - name: Create working branch
+        run: git checkout -B "${{ steps.branch.outputs.fix_branch }}"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: agentic-foundation-test@monkcidev.iam.gserviceaccount.com
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Gemini CLI and uv
+        run: |
+          npm install -g @google/gemini-cli
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Configure Serena MCP server for Gemini CLI
+        run: |
+          mkdir -p .gemini
+          cat > .gemini/settings.json <<'EOF'
+          {
+            "mcpServers": {
+              "serena": {
+                "command": "uvx",
+                "args": [
+                  "-p", "3.13",
+                  "--from", "serena-agent==1.7.0",
+                  "serena", "start-mcp-server",
+                  "--context", "agent",
+                  "--mode", "editing",
+                  "--mode", "interactive",
+                  "--mode", "no-onboarding",
+                  "--mode", "no-memories",
+                  "--enable-web-dashboard", "false",
+                  "--open-web-dashboard", "false"
+                ]
+              }
+            }
+          }
+          EOF
+
+      - name: Run investigation and fix
+        env:
+          GOOGLE_GENAI_USE_VERTEXAI: "true"
+          GOOGLE_CLOUD_PROJECT: monkcidev
+          GOOGLE_CLOUD_LOCATION: ${{ vars.GCP_LOCATION }}
+        run: |
+          gemini --yolo --prompt "$(cat .github/ci-investigate/prompt.md)"
+
+      - name: Remove data files before committing
+        run: rm -f failed_logs.txt wfcheck_jobs.json ci_investigate_diff.patch ci_investigate_history.txt
+
+      - name: Commit fix
+        id: commit
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git -c user.name="ci-investigate-bot" \
+                -c user.email="ci-investigate-bot@users.noreply.github.com" \
+                commit -m "Fix CI failure at ${{ inputs.failed_commit }}"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push fix directly (non-default branch)
+        if: steps.commit.outputs.changed == 'true' && steps.branch.outputs.mode == 'direct'
+        run: git push origin "HEAD:${{ steps.branch.outputs.fix_branch }}"
+
+      - name: Push fix and open PR (default branch)
+        if: steps.commit.outputs.changed == 'true' && steps.branch.outputs.mode == 'pr'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git push origin "HEAD:${{ steps.branch.outputs.fix_branch }}"
+          gh pr create \
+            --base "${{ steps.branch.outputs.default_branch }}" \
+            --head "${{ steps.branch.outputs.fix_branch }}" \
+            --title "Fix CI failure at ${{ inputs.failed_commit }}" \
+            --body "Automated fix from a Gemini + Serena investigation of the failure wfcheck reproduced at commit ${{ inputs.failed_commit }} (wfcheck run ${{ inputs.wfcheck_run_id }})."

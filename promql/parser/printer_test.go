@@ -23,9 +23,7 @@ import (
 
 func TestExprString(t *testing.T) {
 	optsParser := NewParser(Options{
-		ExperimentalDurationExpr:     true,
-		EnableExtendedRangeSelectors: true,
-		EnableBinopFillModifiers:     true,
+		EnableBinopFillModifiers: true,
 	})
 	// A list of valid expressions that are expected to be
 	// returned as out when calling String(). If out is empty the output
@@ -129,6 +127,10 @@ func TestExprString(t *testing.T) {
 		{
 			in:  `a + fill_left(-23) fill_right(42) b`,
 			out: `a + fill_left (-23) fill_right (42) b`,
+		},
+		{
+			in:  `a + fill_left(5) fill_right(5) b`,
+			out: `a + fill (5) b`,
 		},
 		{
 			in:  `a + on(b) group_left fill(-23) c`,
@@ -266,8 +268,23 @@ func TestExprString(t *testing.T) {
 			in: "foo offset -(step())",
 		},
 		{
-			in:  "foo offset +(5*2)",
-			out: "foo offset (5 * 2)",
+			in:  "foo offset +(5)",
+			out: "foo offset (5)",
+		},
+		{
+			in: "foo offset -(5)",
+		},
+		{
+			in: "foo offset (5)",
+		},
+		{
+			in: "foo offset (5m)",
+		},
+		{
+			in: "foo[(5s)]",
+		},
+		{
+			in: "foo[(5m):(1m)]",
 		},
 		{
 			in:  "foo offset +min_of(10s, 20s)",

@@ -58,6 +58,8 @@ const (
 	HashMod Action = "hashmod"
 	// LabelMap copies labels to other labelnames based on a regex.
 	LabelMap Action = "labelmap"
+	// LabelRename atomically renames labels based on a regex.
+	LabelRename Action = "labelrename"
 	// LabelDrop drops any label matching the regex.
 	LabelDrop Action = "labeldrop"
 	// LabelKeep drops any label not matching the regex.
@@ -75,7 +77,7 @@ func (a *Action) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 	switch act := Action(strings.ToLower(s)); act {
-	case Replace, Keep, Drop, HashMod, LabelMap, LabelDrop, LabelKeep, Lowercase, Uppercase, KeepEqual, DropEqual:
+	case Replace, Keep, Drop, HashMod, LabelMap, LabelRename, LabelDrop, LabelKeep, Lowercase, Uppercase, KeepEqual, DropEqual:
 		*a = act
 		return nil
 	}
@@ -88,7 +90,7 @@ type Config struct {
 	// with the configured separator in order.
 	SourceLabels model.LabelNames `yaml:"source_labels,flow,omitempty" json:"source_labels,omitempty"`
 	// Separator is the string between concatenated values from the source labels.
-	Separator string `yaml:"separator,omitempty" json:"separator,omitempty"`
+	Separator string `yaml:"separator" json:"separator"`
 	// Regex against which the concatenation is matched.
 	Regex Regexp `yaml:"regex,omitempty" json:"regex,omitempty"`
 	// Modulus to take of the hash of concatenated values from the source labels.
@@ -97,7 +99,7 @@ type Config struct {
 	// Regexp interpolation is allowed for the replace action.
 	TargetLabel string `yaml:"target_label,omitempty" json:"target_label,omitempty"`
 	// Replacement is the regex replacement pattern to be used.
-	Replacement string `yaml:"replacement,omitempty" json:"replacement,omitempty"`
+	Replacement string `yaml:"replacement" json:"replacement"`
 	// Action is the action to be performed for the relabeling.
 	Action Action `yaml:"action,omitempty" json:"action,omitempty"`
 	// NameValidationScheme to use when validating labels.
@@ -162,7 +164,7 @@ func (c *Config) Validate(nameValidationScheme model.ValidationScheme) error {
 	if (c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && c.Replacement != DefaultRelabelConfig.Replacement {
 		return fmt.Errorf("'replacement' can not be set for %s action", c.Action)
 	}
-	if c.Action == LabelMap && !isValidLabelNameWithRegexVarFn(c.Replacement) {
+	if (c.Action == LabelMap || c.Action == LabelRename) && !isValidLabelNameWithRegexVarFn(c.Replacement) {
 		return fmt.Errorf("%q is invalid 'replacement' for %s action", c.Replacement, c.Action)
 	}
 	if c.Action == HashMod && !c.NameValidationScheme.IsValidLabelName(c.TargetLabel) {
@@ -228,10 +230,10 @@ func (re *Regexp) UnmarshalYAML(unmarshal func(any) error) error {
 
 // MarshalYAML implements the yaml.Marshaler interface.
 func (re Regexp) MarshalYAML() (any, error) {
-	if re.String() != "" {
-		return re.String(), nil
+	if re.Regexp == nil {
+		return nil, nil
 	}
-	return nil, nil
+	return re.String(), nil
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface.
@@ -347,6 +349,17 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 				res := cfg.Regex.ReplaceAllString(l.Name, cfg.Replacement)
 				lb.Set(res, l.Value)
 			}
+		})
+	case LabelRename:
+		lb.RenameLabels(func(name string) string {
+			if !cfg.Regex.MatchString(name) {
+				return name
+			}
+			target := cfg.Regex.ReplaceAllString(name, cfg.Replacement)
+			if !cfg.NameValidationScheme.IsValidLabelName(target) {
+				return name
+			}
+			return target
 		})
 	case LabelDrop:
 		lb.Range(func(l labels.Label) {

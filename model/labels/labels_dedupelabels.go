@@ -670,8 +670,8 @@ func (b *Builder) Labels() Labels {
 
 func marshalNumbersToSizedBuffer(nums []int, data []byte) int {
 	i := len(data)
-	for index := len(nums) - 1; index >= 0; index-- {
-		i = encodeVarint(data, i, nums[index])
+	for _, v := range slices.Backward(nums) {
+		i = encodeVarint(data, i, v)
 	}
 	return len(data) - i
 }
@@ -840,4 +840,15 @@ func (b *ScratchBuilder) Overwrite(ls *Labels) {
 // SizeOfLabels returns the approximate space required for n copies of a label.
 func SizeOfLabels(name, value string, n uint64) uint64 {
 	return uint64(len(name)+len(value)) + n*4 // Assuming most symbol-table entries are 2 bytes long.
+}
+
+// RenameLabels atomically maps label names using rename against the current builder.
+// Identity mappings preserve labels. Collisions leave the entire builder unchanged.
+// The callback must not mutate the builder or retain references to label names.
+func (b *Builder) RenameLabels(rename func(string) string) {
+	b.Range(func(l Label) {
+		target := rename(l.Name)
+		b.Set(target, b.Get(l.Name))
+		b.Del(l.Name)
+	})
 }
